@@ -1,4 +1,4 @@
-/* PROJECT:  MPRO Laboraufgabe 2
+/* PROJECT:  MPRO Laboraufgabe 3
  *
  * DEVELOPERS: Jannik Kreucher
  *             Nick Diendorf
