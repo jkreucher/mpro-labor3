@@ -97,9 +97,6 @@ class SegmentDisplay {
 					this.show(display_patterns[pattern][index]);
 					index++;
 					if(index >= sizeof(display_patterns[pattern])) index = 0;
-				} else {
-					// turn off
-					*display = 0;
 				}
 			}
 		}
@@ -111,7 +108,7 @@ class SegmentDisplay {
 int main() {	
 	SegmentDisplay display(&display_bus);
 	
-	display.roll();
+	display.roll(0); // use pattern 0
 
     while(1) {
 		display.loop();
