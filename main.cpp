@@ -48,14 +48,14 @@ const uint8_t segment_data[16] = {
 };
 
 // display patterns
-const uint8_t display_patterns[][] = {
+const uint8_t display_patterns[4][8] = {
 	{1, 2, 3, 4, 5, 6, 1, 2},
 	{6, 5, 4, 3, 2, 1, 6, 5},
 	{1, 2, 3, 4, 5, 6, 1, 2},
 	{6, 5, 4, 3, 2, 1, 6, 5}
 };
 
-const uint8_t time_patterns[][] = {
+const uint16_t time_patterns[4][8] = {
 	{50, 100, 150, 200, 250, 300, 350, 400},
 	{50, 100, 150, 200, 250, 300, 350, 400},
 	{50, 100, 150, 200, 250, 300, 350, 400},
@@ -109,7 +109,7 @@ class SegmentDisplay {
 				
 				if((enable == 1) && (cnt > 0)) {
 					// show pattern
-					this.show(display_patterns[pattern_d][index]);
+					this->show(display_patterns[pattern_d][index]);
 					index++;
 					if(index >= sizeof(display_patterns[pattern_d])) index = 0;
 					cnt--;
@@ -125,7 +125,7 @@ class SegmentDisplay {
 int main() {	
 	SegmentDisplay display(&display_bus);
 	
-	display.roll(0); // use pattern 0
+	display.roll(0, 0, 5); // use display pattern 0, time pattern 0 and roll 5 numbers
 
     while(1) {
 		display.loop();
