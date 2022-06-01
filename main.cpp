@@ -27,6 +27,10 @@
 #define SW_5    PA_6
 
 
+#define LONG_PRESS	500
+#define SHORT_PRESS	200
+
+
 // 7 Segment Display Data  (dp,g,f,e,d,c,b,a)
 const uint8_t segment_data[16] = {
 	0b00111111, // 0
@@ -54,7 +58,7 @@ const uint8_t display_patterns[4][8] = {
 	{1, 2, 3, 4, 5, 6, 1, 2},
 	{6, 5, 4, 3, 2, 1, 6, 5}
 };
-
+// time patterns
 const uint16_t time_patterns[4][8] = {
 	{50, 100, 150, 200, 250, 300, 350, 400},
 	{50, 100, 150, 200, 250, 300, 350, 400},
@@ -66,68 +70,64 @@ const uint16_t time_patterns[4][8] = {
 
 
 // I/O
-BusOut display_bus(SEG_A, SEG_B, SEG_C, SEG_D, SEG_E, SEG_F, SEG_G, SEG_DP);
+BusOut busSegmentDisplay(SEG_A, SEG_B, SEG_C, SEG_D, SEG_E, SEG_F, SEG_G, SEG_DP);
+DigitalIn pinSwitchRoll(SW_1);
+DigitalIn pinButtonCheat(SW_2);
+
+// display vars
+enum DisplayState {enDisplayStop, enDisplayRun, enDisplayRoll};
+DisplayState display_state;
+
+// button vars
+uint8_t buttonTimer;
 
 
 
-class SegmentDisplay {
-	private:
-		BusOut *display;
-		uint8_t pattern_d, pattern_t, index, cnt, enable;
-		Timer timer;
-	public:
-		SegmentDisplay(BusOut* displayBus) {
-			display = displayBus;
-			index = 0;
-			pattern_d = 0;
-			pattern_t = 0;
-			// start timer
-			timer.start();
-		}
+
+void display() {
+	switch (display_state) {
+		case enDisplayStop:
+			break;
 		
-		void show(uint8_t nibble) {
-			// show number on 7 segment display
-			*display = segment_data[nibble & 0xF];
-		}
+		case enDisplayRun:
+			break;
 		
-		void roll(uint8_t display_p, uint8_t time_p, uint8_t count) {
-			pattern_d = display_p;
-			pattern_t = time_p;
-			cnt = count;
-			enable = 1;
-			index = 0;
+		case enDisplayRoll:
+			break;
+	}
+}
+
+
+
+
+void check_buttons() {
+	// check roll switch
+	if(pinSwitchRoll) {
+		if(display_state == enDisplayStop) {
+			display_state = enDisplayRun;
 		}
-		
-		void stop() {
-			enable = 0;
-			index = 0;
-		}
-		
-		void loop() {
-			if(timer.elapsed_time() >= chrono::milliseconds( time_patterns[pattern_t][index] )) {
-				timer.reset();
-				
-				if((enable == 1) && (cnt > 0)) {
-					// show pattern
-					this->show(display_patterns[pattern_d][index]);
-					index++;
-					if(index >= sizeof(display_patterns[pattern_d])) index = 0;
-					cnt--;
-				}
-				if(cnt == 0) enable = 0;
+	}
+
+	// check cheat button
+	if(pinButtonCheat) {
+		if(buttonTimer < LONG_PRESS+1) {
+			if(buttonTimer == LONG_PRESS) {
+
 			}
+			buttonTimer++;
 		}
-};
+	} else {
+		buttonTimer = 0;
+	}
+}
 	
-
-
 
 int main() {	
-	SegmentDisplay display(&display_bus);
-	
-	display.roll(0, 0, 5); // use display pattern 0, time pattern 0 and roll 5 numbers
+	display_state = enDisplayStop;
+
+	// set number: busSegmentDisplay=segment_data[display_patterns[pattern][index]];
 
     while(1) {
-		display.loop();
+
     }
 }
