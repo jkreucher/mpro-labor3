@@ -40,13 +40,13 @@ BusOut bus7Seg{SegA,SegB,SegC,SegD,SegE,SegF,SegG};
 const uint8_t bPatternSeg[] = {0x79, 0x24, 0x30, 0x19,0x12,0x02};
 const uint8_t bPatternOFF = 0x7F;
 
-//4 Würfelreihenfolgen
-const uint8_t   aPatternWuerfeln1[] ={3,5,0,2,1,4};
-const uint8_t   aPatternWuerfeln2[] ={1,4,2,5,0,3};
-const uint8_t   aPatternWuerfeln3[] ={0,2,5,3,1,4};
-const uint8_t   aPatternWuerfeln4[] ={4,5,2,1,3,0};
-//Adressen der 4 Würfelreihenfolgen
-const uint8_t *tWuerfelPattern[]={aPatternWuerfeln1,aPatternWuerfeln2,aPatternWuerfeln3,aPatternWuerfeln4};
+// 4 Würfelreihenfolgen
+const uint8_t tWuerfelPattern[4][8] = {
+    {3,5,0,2,1,4},
+    {1,4,2,5,0,3},
+    {0,2,5,3,1,4},
+    {4,5,2,1,3,0}
+};
 
 
 void vTimer();
@@ -139,7 +139,7 @@ void vWechsel(){
       
         break;
     case enWuerfeln:
-        bus7Seg=bPatternSeg[*(tWuerfelPattern[bWuerfelpatternWahl]+bWuerfelStelle)];
+        bus7Seg=bPatternSeg[ tWuerfelPattern[bWuerfelpatternWahl][bWuerfelStelle] ];
         break;
     } 
     
@@ -192,7 +192,7 @@ void vAusrollen(){
             case Ausrollmuster4:
                 break;
             }
-            bus7Seg=bPatternSeg[*(tWuerfelPattern[bWuerfelpatternWahl]+bWuerfelStelle)];
+            bus7Seg=bPatternSeg[ tWuerfelPattern[bWuerfelpatternWahl][bWuerfelStelle] ];
            
             bAusrolldauer++;
     }
