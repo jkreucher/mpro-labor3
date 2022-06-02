@@ -1,3 +1,9 @@
+/* PROJECT:  MPRO Laboraufgabe 3
+ *
+ * DEVELOPERS: Jannik Kreucher
+ *             Nick Diendorf
+ *             Benedikt Wendling
+ */
 #include "mbed.h"
 #include "mlme.h"
 #include <chrono>
