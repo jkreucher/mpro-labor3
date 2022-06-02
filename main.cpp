@@ -1,201 +1,254 @@
 #include "mbed.h"
-#include <cstdint>
+#include "mlme.h"
+#include <chrono>
+using namespace std::chrono;
 
-#define LED_NUCLEO  PA_5
-#define SW_NUCLEO   PC_13
-// Velleman STEM Shield I/O
-#define SegA     PB_0
-#define SegB     PC_1
-#define SegC     PA_10
-#define SegD     PB_3
-#define SegE     PB_5
-#define SegF     PB_4
-#define SegG     PB_10
-#define SegDot   PA_8
+typedef unsigned char byte;
 
+#define SEGMENT_FIGURE_1 0x06
+#define SEGMENT_FIGURE_2 0x5B
+#define SEGMENT_FIGURE_3 0x4F
+#define SEGMENT_FIGURE_4 0x66
+#define SEGMENT_FIGURE_5 0x6D
+#define SEGMENT_FIGURE_6 0x7D
 
-#define SW_1    PA_9
-#define SW_2    PC_7
-#define SW_3    PB_6
-#define SW_4    PA_7
-#define SW_5    PA_6
+#define SW_1 PA_9
+#define SW_2 PC_7
+#define SW_3 PB_6
+#define SW_4 PA_7
+#define SW_5 PA_6
 
-// button inputs
-DigitalIn buttonWuerfel(SW_1);
-DigitalIn buttonCheatSix(SW_2);
-DigitalIn buttonDiagnosemode(SW_3);
-DigitalIn buttonCheatOne(SW_5);
+#define SEGMENT_A PB_0
+#define SEGMENT_B PC_1
+#define SEGMENT_C PA_10
+#define SEGMENT_D PB_3
+#define SEGMENT_E PB_5
+#define SEGMENT_F PB_4
+#define SEGMENT_G PB_10
+#define SEGMENT_DOT PA_8
 
-DigitalOut DOt(SegDot);
+#define MANIPULATE_CYCLE_LIMIT 300
 
-//Interrupt
+DigitalIn bSW1(SW_1);
+DigitalIn bSW2(SW_2);
+DigitalIn bSW3(SW_3);
+DigitalIn bSW5(SW_5);
+
+BusOut bSegmentDisplay(SEGMENT_A, SEGMENT_B, SEGMENT_C, SEGMENT_D, SEGMENT_E,
+                       SEGMENT_F, SEGMENT_G);
+DigitalOut bSegmentDot(SEGMENT_DOT);
+
+microseconds CYCLE_TIME = 5ms;
+
+enum { enIdle = 0, enDice, enFade };
+
+byte bDiceState = enIdle;
+
+byte bCurrentFigureIndex = 0;
+byte bCurrentFigurePatternIndex = 0;
+
+byte bCurrentBlinkTimeIndex = 0;
+byte bCurrentBlinkTimePatternIndex = 0;
+byte bCurrentBlinkTimeCycleCount = 0;
+byte bBlinkTimeLimit = 1;
+
+byte bCurrentPatternCycleCount = 0;
+byte bPatternCycleMultiple = 10; // every 10 times 5ms
+
+byte bManipulateOne = 0;
+byte bManipulateSix = 0;
+
+byte bDiagnoseMode = 0;
+
+int bManipulateCycleCount = 0;
+
+const byte aabDicePattern[4][6] = {
+    {SEGMENT_FIGURE_1, SEGMENT_FIGURE_2, SEGMENT_FIGURE_3, SEGMENT_FIGURE_4,
+     SEGMENT_FIGURE_5, SEGMENT_FIGURE_6},
+    {SEGMENT_FIGURE_1, SEGMENT_FIGURE_6, SEGMENT_FIGURE_2, SEGMENT_FIGURE_5,
+     SEGMENT_FIGURE_3, SEGMENT_FIGURE_4},
+    {SEGMENT_FIGURE_1, SEGMENT_FIGURE_2, SEGMENT_FIGURE_5, SEGMENT_FIGURE_6,
+     SEGMENT_FIGURE_3, SEGMENT_FIGURE_4},
+    {SEGMENT_FIGURE_2, SEGMENT_FIGURE_4, SEGMENT_FIGURE_1, SEGMENT_FIGURE_6,
+     SEGMENT_FIGURE_3, SEGMENT_FIGURE_5}};
+
+const byte abManipulateOnePattern[6] = {SEGMENT_FIGURE_1, SEGMENT_FIGURE_2,
+                                        SEGMENT_FIGURE_1, SEGMENT_FIGURE_3,
+                                        SEGMENT_FIGURE_1, SEGMENT_FIGURE_4};
+const byte abManipulateSixPattern[6] = {SEGMENT_FIGURE_6, SEGMENT_FIGURE_2,
+                                        SEGMENT_FIGURE_6, SEGMENT_FIGURE_3,
+                                        SEGMENT_FIGURE_6, SEGMENT_FIGURE_4};
+
+const unsigned char aabBlinkTimeCyclePattern[4][8] = {
+    {10, 20, 30, 40, 50, 60, 70, 80},
+    {20, 25, 30, 35, 40, 45, 50, 55},
+    {20, 40, 60, 80, 100, 120, 140, 160},
+    {10, 15, 20, 30, 45, 60, 80, 100}};
+
 Ticker stSysTick;
+
 volatile char bStandby;
 
-//BUS
-BusOut bus7Seg{SegA,SegB,SegC,SegD,SegE,SegF,SegG};
+void nextFigurePattern(void) {
+  bCurrentFigurePatternIndex++;
 
+  if (bCurrentFigurePatternIndex > 3) {
+    bCurrentFigurePatternIndex = 0;
+  }
+}
 
-//Blink pattern
-const uint8_t bPatternSeg[] = {0x79, 0x24, 0x30, 0x19,0x12,0x02};
-const uint8_t bPatternOFF = 0x7F;
+void nextFigure(void) {
+  bCurrentFigureIndex++;
 
-//4 Würfelreihenfolgen
-const uint8_t   aPatternWuerfeln1[] ={3,5,0,2,1,4};
-const uint8_t   aPatternWuerfeln2[] ={1,4,2,5,0,3};
-const uint8_t   aPatternWuerfeln3[] ={0,2,5,3,1,4};
-const uint8_t   aPatternWuerfeln4[] ={4,5,2,1,3,0};
-//Adressen der 4 Würfelreihenfolgen
-const uint8_t *tWuerfelPattern[]={aPatternWuerfeln1,aPatternWuerfeln2,aPatternWuerfeln3,aPatternWuerfeln4};
+  if (bCurrentFigureIndex > 5) {
+    bCurrentFigureIndex = 0;
+  }
+}
 
+void nextBlinkTimePattern(void) {
+  bCurrentBlinkTimePatternIndex++;
 
-void vTimer();
-void vWechsel();
-void vTestButton();
-void vAusrollen();
+  if (bCurrentBlinkTimePatternIndex > 3) {
+    bCurrentBlinkTimePatternIndex = 0;
+  }
+}
 
-enum bWuerfelenum{enAusrollen,enWuerfeln};
-bWuerfelenum bWuerfelState;
-enum bAusrollmusterenum{Ausrollmuster1,Ausrollmuster2,Ausrollmuster3,Ausrollmuster4};
-bAusrollmusterenum bAusrollmuster=Ausrollmuster1;
+void nextBlinkTimeLimit(void) {
+  bBlinkTimeLimit++;
 
-uint8_t bWurdegewuerfelt=0;
-uint8_t bWuerfelStelle=0,bWuerfelpatternWahl=0; //Würfelstelle= Stelle im patternarray 
-uint8_t bZeitscheibenCounter=9;
-uint8_t bAusrolldauer=0;
-uint8_t bCheatSIX=0;
-uint8_t bCheatONE=0;
-uint16_t bCheatTimerOne=0,bCheatTimerSix=0;
-uint8_t bDiagnosemode=0;
+  if (bBlinkTimeLimit > 7) {
+    bBlinkTimeLimit = 1;
+  }
+}
 
+void setManipulation(byte manipulateOne, byte manipulateSix) {
+  bManipulateOne = manipulateOne;
+  bManipulateSix = manipulateSix && !manipulateOne;
+
+  if (bDiagnoseMode) {
+    bSegmentDot = !(manipulateOne || manipulateSix);
+  }
+
+  bManipulateCycleCount = 0;
+}
+
+void updateDisplay(void) {
+  if (bManipulateOne) {
+    bSegmentDisplay = ~(abManipulateOnePattern[bCurrentFigureIndex]);
+  }
+  if (bManipulateSix) {
+    bSegmentDisplay = ~(abManipulateSixPattern[bCurrentFigureIndex]);
+  }
+  if (!bManipulateOne && !bManipulateSix) {
+    bSegmentDisplay =
+        ~(aabDicePattern[bCurrentFigurePatternIndex][bCurrentFigureIndex]);
+  }
+}
+
+void vTimer(void) { bStandby = 1; }
+
+void vTaste(void) {
+  if (bSW1) {
+    if (bDiceState == enIdle) {
+      bDiceState = enDice;
+    }
+  } else {
+    if (bDiceState == enDice) {
+      bDiceState = enFade;
+    }
+
+    // Manipulation
+    if (bDiceState == enIdle) {
+      // Manipulation
+      if (bSW2) {
+        setManipulation(0, 1);
+      }
+
+      if (bSW5) {
+        setManipulation(1, 0);
+      }
+
+      bManipulateCycleCount++;
+
+      if (bManipulateCycleCount >= MANIPULATE_CYCLE_LIMIT) {
+        setManipulation(0, 0);
+      }
+    }
+  }
+}
+
+void vBlink(void) {
+  switch (bDiceState) {
+  case enIdle:
+
+    bCurrentPatternCycleCount = 0;
+    bCurrentBlinkTimeIndex = 0;
+    bCurrentBlinkTimeCycleCount = 0;
+
+    break;
+  case enDice:
+
+    if (bCurrentPatternCycleCount >= bPatternCycleMultiple) {
+      updateDisplay();
+      bCurrentPatternCycleCount = 0;
+    } else {
+      bCurrentPatternCycleCount++;
+    }
+
+    break;
+  case enFade:
+
+    if (bCurrentBlinkTimeCycleCount >=
+        aabBlinkTimeCyclePattern[bCurrentBlinkTimePatternIndex]
+                                [bCurrentBlinkTimeIndex]) {
+      updateDisplay();
+      bCurrentBlinkTimeIndex++;
+      bCurrentBlinkTimeCycleCount = 0;
+    } else {
+      bCurrentBlinkTimeCycleCount++;
+    }
+
+    if (bCurrentBlinkTimeIndex > bBlinkTimeLimit) {
+      bDiceState = enIdle;
+    }
+
+    break;
+  }
+}
 
 // main() runs in its own thread in the OS
-int main(){
-    stSysTick.attach(&vTimer,5ms);
+int main() {
+  // Check diagnose mode
+  if (bSW3) {
+    bDiagnoseMode = 1;
+  }
 
-    bStandby=0;
-    uint8_t bWuerfelCount=0;
+  // Set segment display dot default to off
+  bSegmentDot = 1;
 
-    if (buttonDiagnosemode.read()==1){
-        bDiagnosemode=1;
-    }
-    
+  // Show first figure on segment display on start
+  updateDisplay();
 
-    while (true) {
-        
-           
-        if (bWuerfelCount>bZeitscheibenCounter) {                      //Alle 10 durchgänge also 10 X 5 ms = 50 ms
-            bWuerfelCount=0;
-            bWuerfelStelle++;
-            if(bWuerfelStelle>5){                   //Würfelstelle ist immer kleiner 6
-                bWuerfelStelle=0;
-            }
-            bWuerfelpatternWahl=0;                  //bWuerfelStelle % 4; //Zufällies Pattern wird gewählt
-            vTestButton();                          //Teste Input
-            vWechsel();                             //Schalte den würfel
-        }
-        bWuerfelCount++;
-        /*bWuerfelStelle++;
-        if(bWuerfelStelle>5){                       //Würfelstelle ist immer kleiner 6
-            bWuerfelStelle=0;
-        }*/
-        
-        if (bCheatTimerOne>0) {
-            bCheatTimerOne--;
-            if (bDiagnosemode==1) {
-                DOt=0;
-            }
-        }else if (bCheatTimerSix>0){
-            bCheatTimerSix--;
-            if (bDiagnosemode==1) {
-                DOt=0;
-            }
-            
-        }else {
-            DOt=1;
-        }
-        
-        
+  stSysTick.attach(&vTimer, CYCLE_TIME);
 
-        while (bStandby==0){
-        }
-        bStandby=0;
-    }
-}
+  while (true) {
+    vTaste();
+    vBlink();
 
-void vTimer(){
-    bStandby=1;
-}
+    // Next pseudo random figure
+    nextFigure();
 
-void vWechsel(){
+    // If idle then pseudo random pattern
+    if (bDiceState == enIdle) {
+      nextFigurePattern();
+      nextBlinkTimePattern();
 
-    switch (bWuerfelState){                                     
-    case enAusrollen:
-        if (bWurdegewuerfelt==1) {              //
-            vAusrollen();
-        }else {                                     
-            bus7Seg=bPatternOFF;
-        }
-      
-        break;
-    case enWuerfeln:
-        bus7Seg=bPatternSeg[*(tWuerfelPattern[bWuerfelpatternWahl]+bWuerfelStelle)];
-        break;
-    } 
-    
-}
-
-void vTestButton(){
-    if (buttonWuerfel.read()==1) {
-        bWuerfelState=enWuerfeln;           //Setzt den Würfelsatus
-        bWurdegewuerfelt=1;                 //entscheidet ob ausgrollt wird
-        bZeitscheibenCounter=9;             //Setzt die würfeldauer wieder au 50 ms 
-        bAusrolldauer=0;                    //Setzt die Ausrolldauer zurück auf 0
-        if (bCheatTimerOne>0) {
-            bCheatONE=1;
-        }else if (bCheatTimerSix>0){
-            bCheatSIX=1;
-        }
-    }else{
-        bWuerfelState=enAusrollen;
+      // Pseudo random blink time limi
+      nextBlinkTimeLimit();
     }
 
-    if (buttonCheatOne.read()==1) {
-     bCheatTimerOne=300;
-    }else if (buttonCheatSix.read()==1){
-        bCheatTimerSix=300;
-    }
-}
-
-void vAusrollen(){
-    
-    if (bAusrolldauer >8) {
-       bCheatSIX=0;
-       bCheatONE=0;
-    }else if (bAusrolldauer==8) {
-        if (bCheatONE==1){                      //hier muss 50/50 hin
-            bus7Seg=bPatternSeg[0];
-        }else if (bCheatSIX==1){
-            bus7Seg=bPatternSeg[5];
-        }
-        bAusrolldauer++;
-    }else{
-        switch (bAusrollmuster) {                       /////hier muss random hin
-            case Ausrollmuster1:
-                bZeitscheibenCounter+=10;
-                break;
-            case Ausrollmuster2:
-                bZeitscheibenCounter+=(5*bAusrolldauer);
-                break;
-            case Ausrollmuster3:
-                break;
-            case Ausrollmuster4:
-                break;
-            }
-            bus7Seg=bPatternSeg[*(tWuerfelPattern[bWuerfelpatternWahl]+bWuerfelStelle)];
-           
-            bAusrolldauer++;
-    }
-
-    
+    while (bStandby == 0)
+      ;
+    bStandby = 0;
+  }
 }
