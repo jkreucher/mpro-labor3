@@ -47,7 +47,6 @@ DigitalOut bSegmentDot(SEGMENT_DOT);
 microseconds CYCLE_TIME = 5ms;
 
 enum { enIdle = 0, enDice, enFade };
-
 byte bDiceState = enIdle;
 
 byte bCurrentFigureIndex = 0;
@@ -128,13 +127,15 @@ void nextBlinkTimeLimit(void) {
 }
 
 void setManipulation(byte manipulateOne, byte manipulateSix) {
+  // only one mode allowed
   bManipulateOne = manipulateOne;
   bManipulateSix = manipulateSix && !manipulateOne;
-
+  // enable decimal dot when in manipulation mode
   if (bDiagnoseMode) {
+    // leds are active low
     bSegmentDot = !(manipulateOne || manipulateSix);
   }
-
+  // reset timer count
   bManipulateCycleCount = 0;
 }
 
@@ -151,15 +152,22 @@ void updateDisplay(void) {
   }
 }
 
-void vTimer(void) { bStandby = 1; }
+void vTimer(void) {
+  // allow main to continue
+  bStandby = 1;
+}
 
 void vTaste(void) {
   if (bSW1) {
+    // switch on
     if (bDiceState == enIdle) {
+      // set state to roll dice continuously
       bDiceState = enDice;
     }
   } else {
+    // switch off
     if (bDiceState == enDice) {
+      // set state of fade
       bDiceState = enFade;
     }
 
@@ -167,16 +175,20 @@ void vTaste(void) {
     if (bDiceState == enIdle) {
       // Manipulation
       if (bSW2) {
+        // manipulation for sixes
         setManipulation(0, 1);
       }
 
       if (bSW5) {
+        // manipulation for ones
         setManipulation(1, 0);
       }
 
+      // increment manipulation timer
       bManipulateCycleCount++;
 
       if (bManipulateCycleCount >= MANIPULATE_CYCLE_LIMIT) {
+        // disable manipulation when time is over
         setManipulation(0, 0);
       }
     }
@@ -186,35 +198,41 @@ void vTaste(void) {
 void vBlink(void) {
   switch (bDiceState) {
   case enIdle:
-
+    // reset everything to zero
     bCurrentPatternCycleCount = 0;
     bCurrentBlinkTimeIndex = 0;
     bCurrentBlinkTimeCycleCount = 0;
-
     break;
-  case enDice:
 
+  case enDice:
+    // update display when time has come
     if (bCurrentPatternCycleCount >= bPatternCycleMultiple) {
       updateDisplay();
+      // reset display timer
       bCurrentPatternCycleCount = 0;
     } else {
+      // increment display timer
       bCurrentPatternCycleCount++;
     }
-
     break;
-  case enFade:
 
+  case enFade:
+    // update display when time specified in pattern has come
     if (bCurrentBlinkTimeCycleCount >=
         aabBlinkTimeCyclePattern[bCurrentBlinkTimePatternIndex]
                                 [bCurrentBlinkTimeIndex]) {
       updateDisplay();
+      // next patten index
       bCurrentBlinkTimeIndex++;
+      // reset display timer
       bCurrentBlinkTimeCycleCount = 0;
     } else {
+      // increment display timer
       bCurrentBlinkTimeCycleCount++;
     }
 
     if (bCurrentBlinkTimeIndex > bBlinkTimeLimit) {
+      // if end of fade, set state to idle
       bDiceState = enIdle;
     }
 
@@ -253,8 +271,8 @@ int main() {
       nextBlinkTimeLimit();
     }
 
-    while (bStandby == 0)
-      ;
+    // wait for timer interrupt
+    while (bStandby == 0);
     bStandby = 0;
   }
 }
